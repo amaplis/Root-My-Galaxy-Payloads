@@ -23,6 +23,7 @@ It intentionally does not contain Android application source code.
 | `dm3q-S9180ZHS8FZF5` | Galaxy S23 Ultra `SM-S9180` | `5.15.189` | Test in progress |
 | `dm2q-S916BXXSAFZG1` | Galaxy S23+ `SM-S916B` | `5.15.189` | Experimental: hardware root from ADB shell; not in app feed |
 | `dm1q-S911BXXSAFZE1` | Galaxy S23 `SM-S911B` | `5.15.189` | Device-tested: root + KernelSU via ADB shell and Shizuku app bridge |
+| `dm1q-S911BXXU9FZDP` | Galaxy S23 `SM-S911B` | `5.15.189` | Device-tested: root + KernelSU via ADB shell |
 
 The S916B FZG1 profile is shell-only today. Its exact tracefs route works from `adb shell`, but direct app-domain execution is not supported. Root My Galaxy would need to delegate the native runner through an authorized shell bridge such as Shizuku. See [`artifacts/dm2q-S916BXXSAFZG1/README.md`](artifacts/dm2q-S916BXXSAFZG1/README.md).
 
@@ -54,6 +55,7 @@ make TARGET=a36xq-A366WVLS3AYG1 ANDROID_NDK_HOME=/path/to/android-ndk
 make TARGET=dm3q-S9180ZHS8FZF5 ANDROID_NDK_HOME=/path/to/android-ndk
 make TARGET=dm2q-S916BXXSAFZG1 ANDROID_NDK_HOME=/path/to/android-ndk
 make TARGET=dm1q-S911BXXSAFZE1 ANDROID_NDK_HOME=/path/to/android-ndk
+make TARGET=dm1q-S911BXXU9FZDP ANDROID_NDK_HOME=/path/to/android-ndk
 ```
 
 Outputs:
@@ -88,5 +90,6 @@ The SM-A366W AYG1 device validation is in
 [`docs/SM-A366W-A366WVLS3AYG1.md`](docs/SM-A366W-A366WVLS3AYG1.md).
 The experimental SM-S916B FZG1 shell port and its exact hardware evidence are in [`docs/SM-S916B-S916BXXSAFZG1.md`](docs/SM-S916B-S916BXXSAFZG1.md).
 The SM-S911B FZE1 port, including its Shizuku app bridge validation, is in [`docs/SM-S911B-S911BXXSAFZE1.md`](docs/SM-S911B-S911BXXSAFZE1.md).
+The SM-S911B FZDP backport is in [`docs/SM-S911B-S911BXXU9FZDP.md`](docs/SM-S911B-S911BXXU9FZDP.md).
 
 Use only on devices you own or are explicitly authorized to test.
